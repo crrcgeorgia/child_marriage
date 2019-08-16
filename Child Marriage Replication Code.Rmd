@@ -1,0 +1,611 @@
+---
+title: "Child marriage replication code"
+output: html_notebook
+---
+
+
+
+```{r}
+library(haven)
+library(descr)
+library(Matching)
+library(rgenoud)
+library(psych)
+library(sandwich)
+library(lmtest)
+library(multiwayvcov)
+library(survey)
+library(margins)
+library(ggeffects)
+library(sjmisc)
+library(ggplot2)
+library(effects)
+library(MASS)
+library(ggeffects)
+
+getwd()
+setwd("")
+ungeo<-read_dta("UN_Women_2018_14.05.18.dta")
+designgeoun <- svydesign(id=~psu,weights=~indwt, strat=~stratum, data=ungeo)
+names(designgeoun)
+
+```
+
+Getting underage marriage prevalence in Georgia
+```{r}
+ungeo$earlymarriage<-ungeo$q87
+ungeo$earlymarriage[ungeo$earlymarriage==-2]<-NA
+ungeo$earlymarriage[ungeo$earlymarriage==-3]<-NA
+ungeo$earlymarriage[ungeo$earlymarriage>=18]<-0
+ungeo$earlymarriage[ungeo$earlymarriage>=10]<-1
+ungeo$earlymarriage[ungeo$earlymarriage==-5]<-0
+table(ungeo$earlymarriage)
+table(ungeo$q87)
+designgeoun <- svydesign(id=~psu,weights=~indwt, strat=~stratum, data=ungeo)
+
+crosstab(ungeo$earlymarriage, ungeo$sex,w=ungeo$indwt, prop.c = TRUE)
+
+```
+
+Significance testing of difference accounting for survey design
+```{r}
+svychisq(~earlymarriage+sex, designgeoun)
+
+```
+
+Getting year married
+```{r}
+ungeo$ageofmarriage<-ungeo$q87
+ungeo$ageofmarriage[ungeo$ageofmarriage<=-1]<-NA
+table(ungeo$ageofmarriage)
+
+ungeo$yearofbirth<-(2018-ungeo$age)
+table(ungeo$yearofbirth)
+table(ungeo$q87)
+ungeo$yearofmarriage<-ungeo$q87
+ungeo$yearofmarriage[ungeo$yearofmarriage<=-1]<-NA
+table(ungeo$yearofmarriage)
+ungeo$yearofmarriage<-(ungeo$yearofmarriage+ungeo$yearofbirth)
+table(ungeo$yearofmarriage)
+
+ungeo$decadeofmarriage<-ungeo$yearofmarriage
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=2010]<-10
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=2000]<-00
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=1990]<-90
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=1980]<-80
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=1970]<-70
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=1960]<-60
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=1950]<-50
+ungeo$decadeofmarriage[ungeo$decadeofmarriage>=1940]<-50
+ungeo$decadeofmarriage[ungeo$decadeofmarriage==10]<-2010
+ungeo$decadeofmarriage[ungeo$decadeofmarriage==00]<-2000
+ungeo$decadeofmarriage[ungeo$decadeofmarriage==90]<-1990
+ungeo$decadeofmarriage[ungeo$decadeofmarriage==80]<-1980
+ungeo$decadeofmarriage[ungeo$decadeofmarriage==70]<-1970
+ungeo$decadeofmarriage[ungeo$decadeofmarriage==60]<-1960
+ungeo$decadeofmarriage[ungeo$decadeofmarriage==50]<-1950
+table(ungeo$decadeofmarriage)
+
+designgeoun <- svydesign(id=~psu,weights=~indwt, strat=~stratum, data=ungeo)
+
+```
+
+Getting the average age of marriage for men and women
+```{r}
+svyby(~ageofmarriage, ~sex, designgeoun, svymean, na.rm=TRUE)
+
+```
+
+Getting economic statistics
+```{r}
+##calculating unemployment
+
+ungeo$q12_1_r<-ungeo$q12_1
+ungeo$q12_1_r[ungeo$q12_1_r==1]<-100
+ungeo$q12_1_r[ungeo$q12_1_r==2]<-200
+ungeo$q12_1_r[ungeo$q12_1_r==3]<-300
+ungeo$q12_1_r[ungeo$q12_1_r==4]<-400
+ungeo$q12_1_r[ungeo$q12_1_r==5]<-500
+ungeo$q12_1_r[ungeo$q12_1_r==6]<-600
+table(ungeo$q12_1_r)
+ungeo$primarystatus<-ifelse(ungeo$q12_1==-7, ungeo$q13_1,ungeo$q12_1_r)
+table(ungeo$primarystatus)
+ungeo$primarystatus_r<-ungeo$primarystatus
+ungeo$primarystatus_r[ungeo$primarystatus_r<=-1]<-NA
+table(ungeo$primarystatus_r)
+
+#getting household worker status
+table(ungeo$q1)
+table(ungeo$q8_1)
+ungeo$q8_1_r<-ungeo$q8_1
+ungeo$q8_1_r[ungeo$q8_1_r!=1]<-0
+table(ungeo$q8_1_r)
+
+ungeo$householdworkertwo<-(ungeo$q8_1_r+ungeo$q1)
+ungeo$householdworkertwo[ungeo$householdworkertwo!=2]<-0
+ungeo$householdworkertwo[ungeo$householdworkertwo==2]<-1
+table(ungeo$householdworkertwo)
+
+ungeo$primarystatus_r<-ifelse(ungeo$householdworkertwo==1,1000,ungeo$primarystatus)
+table(ungeo$primarystatus_r)
+ungeo$primarystatus_r_r <- factor(ungeo$primarystatus_r,
+                                  levels = c(-7,-3,1,2,3,4,5,100,200,300,400,500,600,1000),
+                                  labels = c("notapplicable", 
+                                             "interviewer error", 
+                                             "Employee with contract",
+                                             "Employee without a contract",
+                                             "Self-employed formal",
+                                             "Self-employed informal",
+                                             "Other Employed",
+                                             "Student not working",
+                                             "Homemaker and not working",
+                                             "Retired and not working",
+                                             "Disabled and unable to work",
+                                             "Unemployed",
+                                             "Other Unemployed",
+                                             "Contributing Household Worker"))
+table(ungeo$primarystatus_r_r)
+ungeo$primarystatus_r_r[ungeo$primarystatus_r_r=="notapplicable"]<-NA
+ungeo$primarystatus_r_r[ungeo$primarystatus_r_r=="interviewer error"]<-NA
+
+#wants a job
+ungeo$q9_1_r<-ungeo$q9_1
+ungeo$q9_1_r[ungeo$q9_1_r<=-1]<-0
+table(ungeo$q9_1_r)
+
+#sought job
+table(ungeo$q10_1)
+ungeo$q10_1_r<-ungeo$q10_1
+ungeo$q10_1_r[ungeo$q10_1_r<=-1]<-0
+table(ungeo$q10_1_r)
+
+#can start working
+table(ungeo$q11_1)
+ungeo$q11_1_r<-ungeo$q11_1
+ungeo$q11_1_r[ungeo$q11_1_r<=-1]<-0
+table(ungeo$q11_1_r)
+
+#unemployed calculation
+ungeo$seekingwork<-(ungeo$q11_1_r+ungeo$q10_1_r+ungeo$q9_1_r)
+table(ungeo$seekingwork)
+ungeo$seekingwork[ungeo$seekingwork<=2]<-0
+ungeo$seekingwork[ungeo$seekingwork==3]<-100
+
+ungeo$tocalculateunemployment<-(as.numeric(ungeo$primarystatus_r_r)+ungeo$seekingwork)
+
+table(ungeo$tocalculateunemployment)
+table(ungeo$primarystatus_r_r)
+table(as.numeric(ungeo$primarystatus_r_r))
+
+ungeo$laborforcebreakdown<-ungeo$tocalculateunemployment
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==3]<-3
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==4]<-3
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==5]<-3
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==6]<-3
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==7]<-3
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==8]<-0
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==9]<-0
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==10]<-0
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==11]<-0
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==12]<-0
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==13]<-0
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==14]<-3
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==108]<-2
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==109]<-2
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==110]<-2
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==112]<-2
+ungeo$laborforcebreakdown[ungeo$laborforcebreakdown==114]<-3
+freq(ungeo$laborforcebreakdown, ungeo$indwt)
+ungeo$laborforceparticipation<-ungeo$laborforcebreakdown
+ungeo$laborforceparticipation[ungeo$laborforceparticipation<=1]<-0
+ungeo$laborforceparticipation[ungeo$laborforceparticipation>=2]<-1
+table(ungeo$laborforcebreakdown)
+table(ungeo$laborforceparticipation)
+
+
+#Education recode, secondary, technical, tertiary
+table(ungeo$q14)
+ungeo$q14_r<-ungeo$q14
+ungeo$q14_r[ungeo$q14_r<=4]<-1
+ungeo$q14_r[ungeo$q14_r==7]<-3
+ungeo$q14_r[ungeo$q14_r>=8]<-3
+ungeo$q14_r[ungeo$q14_r==5]<-2
+ungeo$q14_r[ungeo$q14_r==6]<-2
+table(ungeo$q14_r)
+
+
+#income
+table(ungeo$q23_1)
+ungeo$q23_1_r<-ungeo$q23_1
+ungeo$q23_1_r[ungeo$q23_1_r<=-1]<-NA
+ungeo$q23_1_r[ungeo$q23_1_r==0]<-1
+
+table(ungeo$q23_2)
+ungeo$q23_2_r<-ungeo$q23_2
+ungeo$q23_2_r[ungeo$q23_2_r==-1]<-NA
+ungeo$q23_2_r[ungeo$q23_2_r==-2]<-NA
+ungeo$q23_2_r[ungeo$q23_2_r==-3]<-NA
+ungeo$q23_2_r[ungeo$q23_2_r==-7]<-NA
+ungeo$q23_2_r[ungeo$q23_2_r==0]<-1
+ungeo$q23_2_r[ungeo$q23_2_r==-5]<-0
+table(ungeo$q23_2_r)
+
+table(ungeo$q23_3_r)
+ungeo$q23_3_r<-ungeo$q23_3
+ungeo$q23_3_r[ungeo$q23_3_r==-1]<-NA
+ungeo$q23_3_r[ungeo$q23_3_r==-2]<-NA
+ungeo$q23_3_r[ungeo$q23_3_r==-3]<-NA
+ungeo$q23_3_r[ungeo$q23_3_r==-7]<-NA
+ungeo$q23_3_r[ungeo$q23_3_r==0]<-1
+ungeo$q23_3_r[ungeo$q23_3_r==-5]<-0
+
+
+table(ungeo$q23_4_r)
+ungeo$q23_4_r<-ungeo$q23_4
+ungeo$q23_4_r[ungeo$q23_4_r==-1]<-NA
+ungeo$q23_4_r[ungeo$q23_4_r==-2]<-NA
+ungeo$q23_4_r[ungeo$q23_4_r==-3]<-NA
+ungeo$q23_4_r[ungeo$q23_4_r==-7]<-NA
+ungeo$q23_4_r[ungeo$q23_4_r==0]<-1
+ungeo$q23_4_r[ungeo$q23_4_r==-5]<-0
+
+table(ungeo$q23_5_r)
+ungeo$q23_5_r<-ungeo$q23_5
+ungeo$q23_5_r[ungeo$q23_5_r==-1]<-NA
+ungeo$q23_5_r[ungeo$q23_5_r==-2]<-NA
+ungeo$q23_5_r[ungeo$q23_5_r==-3]<-NA
+ungeo$q23_5_r[ungeo$q23_5_r==-7]<-NA
+ungeo$q23_5_r[ungeo$q23_5_r==0]<-1
+ungeo$q23_5_r[ungeo$q23_5_r==-5]<-0
+
+table(ungeo$q24_1)
+ungeo$q24_1_r<-ungeo$q24_1
+ungeo$q24_1_r[ungeo$q24_1_r<=-1]<-NA
+table(ungeo$q24_1_r)
+
+ungeo$q24_2_r<-ungeo$q24_2
+ungeo$q24_2_r[ungeo$q24_2_r==-1]<-NA
+ungeo$q24_2_r[ungeo$q24_2_r==-2]<-NA
+ungeo$q24_2_r[ungeo$q24_2_r==-3]<-NA
+ungeo$q24_2_r[ungeo$q24_2_r==-7]<-NA
+ungeo$q24_2_r[ungeo$q24_2_r==-5]<-0
+table(ungeo$q24_2)
+
+table(ungeo$q24_3_r)
+ungeo$q24_3_r<-ungeo$q24_3
+ungeo$q24_3_r[ungeo$q24_3_r==-1]<-NA
+ungeo$q24_3_r[ungeo$q24_3_r==-2]<-NA
+ungeo$q24_3_r[ungeo$q24_3_r==-3]<-NA
+ungeo$q24_3_r[ungeo$q24_3_r==-7]<-NA
+ungeo$q24_3_r[ungeo$q24_3_r==-5]<-0
+
+table(ungeo$q24_4_r)
+ungeo$q24_4_r<-ungeo$q24_4
+ungeo$q24_4_r[ungeo$q24_4_r==-1]<-NA
+ungeo$q24_4_r[ungeo$q24_4_r==-2]<-NA
+ungeo$q24_4_r[ungeo$q24_4_r==-3]<-NA
+ungeo$q24_4_r[ungeo$q24_4_r==-7]<-NA
+ungeo$q24_4_r[ungeo$q24_4_r==-5]<-0
+
+table(ungeo$q24_5_r)
+ungeo$q24_5_r<-ungeo$q24_5
+ungeo$q24_5_r[ungeo$q24_5_r==-1]<-NA
+ungeo$q24_5_r[ungeo$q24_5_r==-2]<-NA
+ungeo$q24_5_r[ungeo$q24_5_r==-3]<-NA
+ungeo$q24_5_r[ungeo$q24_5_r==-7]<-NA
+ungeo$q24_5_r[ungeo$q24_5_r==-5]<-0
+
+ungeo$annualincomejob1<- (ungeo$q23_1_r*ungeo$q24_1_r)
+ungeo$annualincomejob2<- (ungeo$q23_2_r*ungeo$q24_2_r)
+ungeo$annualincomejob3<- (ungeo$q23_3_r*ungeo$q24_3_r)
+ungeo$annualincomejob4<- (ungeo$q23_4_r*ungeo$q24_4_r)
+ungeo$annualincomejob5<- (ungeo$q23_5_r*ungeo$q24_5_r)
+ungeo$annualincomealljobs<-(ungeo$annualincomejob1+ungeo$annualincomejob2+ungeo$annualincomejob3+ungeo$annualincomejob4+ungeo$annualincomejob5)
+
+describe(ungeo$annualincomejob1)
+describe(ungeo$annualincomejob2)
+describe(ungeo$annualincomejob3)
+describe(ungeo$annualincomejob4)
+describe(ungeo$annualincomejob5)
+describe(ungeo$annualincomealljobs)
+
+
+designgeoun <- svydesign(id=~psu,weights=~indwt, strat=~stratum, data=ungeo)
+female<-subset(designgeoun, designgeoun$variables$sex==2)
+
+```
+
+
+Descriptives for differences between decades
+```{r}
+
+crosstab(female$variables$earlymarriage,female$variables$decadeofmarriage, w=female$variables$indwt, prop.c=TRUE)
+
+```
+
+Testing for differences between decades
+
+```{r}
+female$variables$decadeofmarriage<-as.factor(female$variables$decadeofmarriage)
+
+model1<-svyglm(earlymarriage~decadeofmarriage, design=female, family="quasibinomial")
+summary(model1)
+```
+
+
+```{r}
+
+plot(ggeffect(model1, "decadeofmarriage"))
+
+```
+
+Predictors of early marriage
+
+```{r}
+table(ungeo$q86)
+ungeo$q86_r<-ungeo$q86
+ungeo$q86_r[ungeo$q86_r==-3]<-NA
+ungeo$conflict<-ungeo$q86_r
+table(ungeo$conflict)
+
+#minority
+table(ungeo$q84)
+ungeo$q84_r<-ungeo$q84
+ungeo$q84_r[ungeo$q84_r==1]<-0
+ungeo$q84_r[ungeo$q84_r>=2]<-1
+ungeo$q84_r[ungeo$q84_r==-3]<-NA
+table(ungeo$q84_r)
+ungeo$ethnicity<-as.factor(ungeo$q84_r)
+
+#parental education
+table(ungeo$q82_1)
+ungeo$momed<-ungeo$q82_1
+ungeo$momed[ungeo$momed<=-1]<-NA
+ungeo$momed[ungeo$momed<=4]<-1
+ungeo$momed[ungeo$momed==5]<-2
+ungeo$momed[ungeo$momed==6]<-2
+ungeo$momed[ungeo$momed>=7]<-3
+table(ungeo$momed)
+ungeo$momed_r<-ungeo$momed
+ungeo$momed_r[ungeo$momed_r!=3]<-0
+ungeo$momed_r[ungeo$momed_r==3]<-1
+table(ungeo$momed_r)
+
+table(ungeo$q82_2)
+ungeo$daded<-ungeo$q82_2
+ungeo$daded[ungeo$daded<=-1]<-NA
+ungeo$daded[ungeo$daded<=4]<-1
+ungeo$daded[ungeo$daded==5]<-2
+ungeo$daded[ungeo$daded==6]<-2
+ungeo$daded[ungeo$daded>=7]<-3
+table(ungeo$daded)
+ungeo$daded_r<-ungeo$daded
+ungeo$daded_r[ungeo$daded_r!=3]<-0
+ungeo$daded_r[ungeo$daded_r==3]<-1
+
+ungeo$ses<-(ungeo$daded_r+ungeo$momed_r)
+designgeoun <- svydesign(id=~psu,weights=~indwt, strat=~stratum, data=ungeo)
+female<-subset(designgeoun, designgeoun$variables$sex==2)
+
+female$variables$stratum<-as.factor(female$variables$stratum)
+female$variables$conflict<-as.factor(female$variables$conflict)
+female$variables$decadeofmarriage_r<-as.factor(female$variables$decadeofmarriage)
+female$variables$momed_r<-as.factor(female$variables$momed_r)
+female$variables$daded_r<-as.factor(female$variables$daded_r)
+female$variables$earlymarriage<-as.numeric(female$variables$earlymarriage)
+female$variables$ethnicity<-as.numeric(female$variables$ethnicity)
+
+model2<-svyglm(as.factor(earlymarriage)~stratum+momed_r+
+                 age+
+                      conflict+
+                      ethnicity+
+                 daded_r, design=female, family="quasibinomial")
+summary(model2)
+
+```
+
+
+```{r}
+ggpredict(model2)
+```
+
+```{r}
+plot(ggpredict(model2, terms = c("stratum")))
+```
+
+```{r}
+plot(ggpredict(model2, terms = c("conflict")))
+```
+
+```{r}
+plot(ggpredict(model2, terms = c("ethnicity")))
+
+```
+
+```{r}
+plot(ggpredict(model2, terms = c("momed_r")))
+```
+
+```{r}
+plot(ggpredict(model2, terms = c("daded_r")))
+```
+
+```{r}
+plot(ggpredict(model2, terms = c("age[20,30,40,50,60,70,80]")))
+
+```
+Matching on demographics
+```{r}
+female_r<-female[complete.cases(female$variables$stratum),]
+dim(female_r)
+female_r<-female_r[complete.cases(female_r$variables$earlymarriage),]
+dim(female_r)
+female_r<-female_r[complete.cases(female_r$variables$age),]
+dim(female_r)
+female_r<-female_r[complete.cases(female_r$variables$conflict),]
+dim(female_r)
+female_r<-female_r[complete.cases(female_r$variables$ethnicity),]
+dim(female_r)
+female_r<-female_r[complete.cases(female_r$variables$momed_r),]
+dim(female_r)
+female_r<-female_r[complete.cases(female_r$variables$daded_r),]
+dim(female_r)
+
+
+matchingmodel<-svyglm(earlymarriage~stratum+
+                     age+
+                       momed_r+
+                       conflict+
+                     as.factor(ethnicity)+
+                     daded_r, design = female_r, family = "quasibinomial")
+
+summary(matchingmodel)
+```
+Matching continued
+```{r}
+female_r$variables$pscores<-matchingmodel$fitted.values
+
+
+xed<-cbind(female_r$variables$stratum,
+      female_r$variables$age,
+      female_r$variables$momed_r,
+      female_r$variables$conflict,
+      female_r$variables$ethnicity,
+      female_r$variables$daded_r,
+      female_r$variables$pscores)
+      
+
+balmatrixed<-cbind(female_r$variables$stratum,
+           female_r$variables$age,
+           female_r$variables$momed_r,
+           female_r$variables$conflict,
+           female_r$variables$ethnicity,
+           female_r$variables$daded_r,
+           female_r$variables$pscores)
+
+new.weights.female <- 851*female_r$variables$indwt*(1/sum(female_r$variables$indwt))
+
+
+
+genweights<-GenMatch(Tr=female_r$variables$earlymarriage, X=xed,
+         BalanceMatrix=balmatrixed,
+         weights = new.weights.female,
+         pop.size=2000,
+         unif.seed=round(1),
+         int.seed=round(2))
+
+```
+
+Matching and getting balance
+
+```{r}
+moutbachelors <- Match(Tr=female_r$variables$earlymarriage, X=xed,
+                       Weight.matrix=genweights, weights = new.weights.female, ties = TRUE)
+
+checkbalance <- MatchBalance(female_r$variables$earlymarriage~female_r$variables$stratum+
+                               female_r$variables$age+
+                               female_r$variables$momed_r+
+                               female_r$variables$conflict+
+                               female_r$variables$ethnicity+
+                               female_r$variables$daded_r+
+                               female_r$variables$pscores, weights = new.weights.female,
+                             match.out=moutbachelors, nboots=5000)
+
+```
+
+
+Matched data extraction
+```{r}
+female_r$variablestreatedbachelors<-female_r$variables[moutbachelors$index.treated,]
+female_r$variablestreatedbachelors$mweights<-moutbachelors$weights
+female_r$variablescontrolbachelors<-female_r$variables[moutbachelors$index.control,]
+female_r$variablescontrolbachelors$mweights<-moutbachelors$weights
+matchedfemaleunderage<-merge(female_r$variablestreatedbachelors,female_r$variablescontrolbachelors, all = TRUE)
+```
+
+
+```{r}
+#testing for differences in labor force participation
+matchedfemaleunderage$earlymarriage<-as.factor(matchedfemaleunderage$earlymarriage)
+
+lfpmodel<-glm(laborforceparticipation~earlymarriage, family = "quasibinomial", 
+              w=mweights, data=matchedfemaleunderage)
+
+summary(lfpmodel)
+
+```
+
+```{r}
+ggpredict(lfpmodel, terms = c("earlymarriage"))
+```
+
+```{r}
+plot(ggpredict(lfpmodel, terms = c("earlymarriage")))
+```
+
+```{r}
+
+lfpmodel2<-glm(laborforceparticipation~as.factor(earlymarriage)+ as.factor(q14_r), 
+               w=mweights, data=matchedfemaleunderage)
+summary(lfpmodel2)
+
+```
+
+```{r}
+dat2 <- ggpredict(lfpmodel2, terms = c("earlymarriage", "q14_r"))
+dat2
+```
+
+
+```{r}
+
+plot(dat2, facet = TRUE)
+
+```
+
+```{r}
+educationmodel<-polr(as.factor(q14_r)~as.factor(earlymarriage), data = matchedfemaleunderage)
+summary(educationmodel)
+```
+
+```{r}
+dat3 <- ggpredict(educationmodel, terms = c("earlymarriage"))
+dat3
+```
+
+```{r}
+plot(dat3, facet = TRUE)
+
+```
+
+```{r}
+
+incomemodel<-glm(annualincomealljobs~as.factor(earlymarriage), 
+               w=mweights, data=matchedfemaleunderage)
+summary(incomemodel)
+```
+
+```{r}
+ggpredict(incomemodel, terms = c("earlymarriage"))
+```
+
+```{r}
+plot(ggpredict(incomemodel, terms = c("earlymarriage")))
+
+```
+
+```{r}
+incomemodel2<-glm(annualincomealljobs~as.factor(earlymarriage)+ as.factor(q14_r), 
+                 w=mweights, data=matchedfemaleunderage)
+summary(incomemodel2)
+
+```
+
+```{r}
+ggpredict(incomemodel2, terms = c("earlymarriage", "q14_r"))
+```
+
+```{r}
+plot(ggpredict(incomemodel2, terms = c("earlymarriage", "q14_r")))
+```
+
