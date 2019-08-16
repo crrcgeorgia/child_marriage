@@ -25,7 +25,7 @@ library(ggeffects)
 
 getwd()
 setwd("")
-ungeo<-read_dta("UN_Women_2018_14.05.18.dta")
+ungeo<-read_dta("https://caucasusbarometer.org/downloads/UN_Women_Geo_2018_14.05.18.dta")
 designgeoun <- svydesign(id=~psu,weights=~indwt, strat=~stratum, data=ungeo)
 names(designgeoun)
 
